@@ -8,7 +8,46 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL;
 
 const IN_STOCK_CATEGORY = "Товари в наявності";
+/*
+ * Коротка пам'ять діалогу для кожного Telegram користувача.
+ *
+ * Зберігаємо останні повідомлення, щоб AI розумів
+ * фрази на кшталт:
+ * "Так, хочу замовити"
+ * після попередньої пропозиції товару.
+ */
+const conversationHistory = new Map();
 
+const MAX_HISTORY_MESSAGES = 10;
+
+function getConversationHistory(chatId) {
+  if (!conversationHistory.has(chatId)) {
+    conversationHistory.set(chatId, []);
+  }
+
+  return conversationHistory.get(chatId);
+}
+
+function addToConversationHistory(
+  chatId,
+  role,
+  content
+) {
+  const history =
+    getConversationHistory(chatId);
+
+  history.push({
+    role,
+    content
+  });
+
+  while (
+    history.length >
+    MAX_HISTORY_MESSAGES
+  ) {
+    history.shift();
+  }
+}
 async function sendTelegramMessage(chatId, text, extra = {}) {
   await fetch(
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
