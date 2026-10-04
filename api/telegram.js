@@ -779,7 +779,14 @@ const completion =
         ok: true
       });
     }
-
+/*
+ * Сохраняем ответ AI в историю диалога.
+ */
+addToConversationHistory(
+  chatId,
+  "assistant",
+  rawAnswer
+);
 
     /*
      * =====================================================
