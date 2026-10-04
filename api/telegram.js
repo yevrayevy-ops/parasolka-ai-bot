@@ -719,27 +719,36 @@ ${JSON.stringify(
 `;
 
 
-    const completion =
-      await openai.chat.completions.create({
-        model: "gpt-5-mini",
+   /*
+ * Сохраняем сообщение пользователя
+ * в историю текущего диалога.
+ */
+addToConversationHistory(
+  chatId,
+  "user",
+  userText
+);
 
-        response_format: {
-          type: "json_object"
-        },
+const history =
+  getConversationHistory(chatId);
 
-        messages: [
-          {
-            role: "system",
-            content:
-              systemPrompt
-          },
-          {
-            role: "user",
-            content:
-              userText
-          }
-        ]
-      });
+const completion =
+  await openai.chat.completions.create({
+    model: "gpt-5-mini",
+
+    response_format: {
+      type: "json_object"
+    },
+
+    messages: [
+      {
+        role: "system",
+        content:
+          systemPrompt
+      },
+      ...history
+    ]
+  });
 
 
     const rawAnswer =
