@@ -8,17 +8,9 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL;
 
 const IN_STOCK_CATEGORY = "Товари в наявності";
-/*
- * Коротка пам'ять діалогу для кожного Telegram користувача.
- *
- * Зберігаємо останні повідомлення, щоб AI розумів
- * фрази на кшталт:
- * "Так, хочу замовити"
- * після попередньої пропозиції товару.
- */
-const conversationHistory = new Map();
 
-const MAX_HISTORY_MESSAGES = 10;
+const conversationHistory = new Map();
+const MAX_HISTORY_MESSAGES = 8;
 
 function getConversationHistory(chatId) {
   if (!conversationHistory.has(chatId)) {
@@ -28,28 +20,217 @@ function getConversationHistory(chatId) {
   return conversationHistory.get(chatId);
 }
 
-function addToConversationHistory(
-  chatId,
-  role,
-  content
-) {
-  const history =
-    getConversationHistory(chatId);
+function addToConversationHistory(chatId, role, content) {
+  const history = getConversationHistory(chatId);
 
   history.push({
     role,
     content
   });
 
-  while (
-    history.length >
-    MAX_HISTORY_MESSAGES
-  ) {
+  while (history.length > MAX_HISTORY_MESSAGES) {
     history.shift();
   }
 }
+
+function detectLanguage(text) {
+  if (/[\u0590-\u05FF]/.test(text)) {
+    return "HEBREW";
+  }
+
+  if (/[ЇїІіЄєҐґ]/.test(text)) {
+    return "UKRAINIAN";
+  }
+
+  if (/[А-Яа-яЁё]/.test(text)) {
+    return "RUSSIAN";
+  }
+
+  return "ENGLISH";
+}
+
+const LANGUAGE_CODE = {
+  UKRAINIAN: "U",
+  RUSSIAN: "R",
+  ENGLISH: "E",
+  HEBREW: "H"
+};
+
+const CODE_LANGUAGE = {
+  U: "UKRAINIAN",
+  R: "RUSSIAN",
+  E: "ENGLISH",
+  H: "HEBREW"
+};
+
+function t(language, key) {
+  const texts = {
+    UKRAINIAN: {
+      confirmChecking: "Перевіряю замовлення...",
+      cancelled: "Замовлення скасовано.",
+      orderTitle: "Ваше замовлення:",
+      stockTitle: "Товари в наявності:",
+      preorderTitle: "Попереднє замовлення:",
+      together: "Разом:",
+      discount: "Знижка 10%:",
+      toPay: "До сплати:",
+      donation: "20% на користь Парасольки:",
+      confirmQuestion: "Підтверджуєте замовлення?",
+      contact:
+        "Після підтвердження наш співробітник зв'яжеться з вами, щоб остаточно підтвердити замовлення та деталі доставки.",
+      payment:
+        "⚠️ Оплата здійснюється тільки під час отримання. Parasolka не приймає передоплату. Якщо хтось просить вас оплатити замовлення наперед від імені Parasolka — це шахрайство.",
+      confirmButton: "✅ Підтвердити замовлення",
+      cancelButton: "❌ Скасувати",
+      success: orderNumber =>
+        `✅ Дякуємо! Ваше замовлення №${orderNumber} прийнято.`,
+      successContact:
+        "Наш співробітник зв'яжеться з вами, щоб остаточно підтвердити замовлення та деталі доставки.",
+      successPayment:
+        "💳 Оплата здійснюється тільки під час отримання.",
+      successWarning:
+        "⚠️ Parasolka не приймає передоплату. Якщо хтось просить вас оплатити замовлення наперед від імені Parasolka — це шахрайство.",
+      stockError: (name, stock) =>
+        `${name}: доступно лише ${stock} шт.`,
+      unavailable: name =>
+        `Товар зараз недоступний: ${name}`,
+      notFound: id => `Товар не знайдено: ${id}`,
+      invalidQuantity: name =>
+        `Невірна кількість: ${name}`,
+      genericError:
+        "❌ Не вдалося оформити замовлення.\n\nБудь ласка, спробуйте ще раз.",
+      tooLarge:
+        "Замовлення занадто велике для автоматичного оформлення через чат.\n\nБудь ласка, зробіть замовлення через Mini App Parasolka Food.",
+      parseError:
+        "Вибачте, зараз не вдалося обробити запит. Спробуйте ще раз."
+    },
+
+    RUSSIAN: {
+      confirmChecking: "Проверяю заказ...",
+      cancelled: "Заказ отменён.",
+      orderTitle: "Ваш заказ:",
+      stockTitle: "Товары в наличии:",
+      preorderTitle: "Предварительный заказ:",
+      together: "Итого:",
+      discount: "Скидка 10%:",
+      toPay: "К оплате:",
+      donation: "20% в пользу Парасольки:",
+      confirmQuestion: "Подтверждаете заказ?",
+      contact:
+        "После подтверждения наш сотрудник свяжется с вами, чтобы окончательно подтвердить заказ и детали доставки.",
+      payment:
+        "⚠️ Оплата производится только при получении. Parasolka не принимает предоплату. Если кто-то просит вас оплатить заказ заранее от имени Parasolka — это мошенничество.",
+      confirmButton: "✅ Подтвердить заказ",
+      cancelButton: "❌ Отменить",
+      success: orderNumber =>
+        `✅ Спасибо! Ваш заказ №${orderNumber} принят.`,
+      successContact:
+        "Наш сотрудник свяжется с вами, чтобы окончательно подтвердить заказ и детали доставки.",
+      successPayment:
+        "💳 Оплата производится только при получении.",
+      successWarning:
+        "⚠️ Parasolka не принимает предоплату. Если кто-то просит вас оплатить заказ заранее от имени Parasolka — это мошенничество.",
+      stockError: (name, stock) =>
+        `${name}: доступно только ${stock} шт.`,
+      unavailable: name =>
+        `Товар сейчас недоступен: ${name}`,
+      notFound: id => `Товар не найден: ${id}`,
+      invalidQuantity: name =>
+        `Неверное количество: ${name}`,
+      genericError:
+        "❌ Не удалось оформить заказ.\n\nПожалуйста, попробуйте ещё раз.",
+      tooLarge:
+        "Заказ слишком большой для автоматического оформления через чат.\n\nПожалуйста, сделайте заказ через Mini App Parasolka Food.",
+      parseError:
+        "Извините, сейчас не удалось обработать запрос. Попробуйте ещё раз."
+    },
+
+    ENGLISH: {
+      confirmChecking: "Checking your order...",
+      cancelled: "Order cancelled.",
+      orderTitle: "Your order:",
+      stockTitle: "Items in stock:",
+      preorderTitle: "Pre-order:",
+      together: "Subtotal:",
+      discount: "10% discount:",
+      toPay: "Total:",
+      donation: "20% for Parasolka:",
+      confirmQuestion: "Do you confirm the order?",
+      contact:
+        "After confirmation, our team member will contact you to confirm the order and delivery details.",
+      payment:
+        "⚠️ Payment is made only upon receipt. Parasolka does not accept prepayment. If someone asks you to pay in advance on behalf of Parasolka, it is a scam.",
+      confirmButton: "✅ Confirm order",
+      cancelButton: "❌ Cancel",
+      success: orderNumber =>
+        `✅ Thank you! Your order №${orderNumber} has been accepted.`,
+      successContact:
+        "Our team member will contact you to confirm the order and delivery details.",
+      successPayment:
+        "💳 Payment is made only upon receipt.",
+      successWarning:
+        "⚠️ Parasolka does not accept prepayment. If someone asks you to pay in advance on behalf of Parasolka, it is a scam.",
+      stockError: (name, stock) =>
+        `${name}: only ${stock} pcs. available.`,
+      unavailable: name =>
+        `This product is currently unavailable: ${name}`,
+      notFound: id => `Product not found: ${id}`,
+      invalidQuantity: name =>
+        `Invalid quantity: ${name}`,
+      genericError:
+        "❌ The order could not be placed.\n\nPlease try again.",
+      tooLarge:
+        "The order is too large to process automatically in chat.\n\nPlease place the order through the Parasolka Food Mini App.",
+      parseError:
+        "Sorry, I could not process the request right now. Please try again."
+    },
+
+    HEBREW: {
+      confirmChecking: "בודק את ההזמנה...",
+      cancelled: "ההזמנה בוטלה.",
+      orderTitle: "ההזמנה שלך:",
+      stockTitle: "מוצרים במלאי:",
+      preorderTitle: "הזמנה מראש:",
+      together: "סה״כ:",
+      discount: "הנחה של 10%:",
+      toPay: "לתשלום:",
+      donation: "20% לטובת Parasolka:",
+      confirmQuestion: "לאשר את ההזמנה?",
+      contact:
+        "לאחר האישור, איש צוות שלנו יצור איתך קשר כדי לאשר את ההזמנה ופרטי המשלוח.",
+      payment:
+        "⚠️ התשלום מתבצע רק בעת קבלת ההזמנה. Parasolka אינה מקבלת תשלום מראש. אם מישהו מבקש ממך לשלם מראש בשם Parasolka — מדובר בהונאה.",
+      confirmButton: "✅ אישור הזמנה",
+      cancelButton: "❌ ביטול",
+      success: orderNumber =>
+        `✅ תודה! ההזמנה שלך №${orderNumber} התקבלה.`,
+      successContact:
+        "איש צוות שלנו יצור איתך קשר כדי לאשר את ההזמנה ופרטי המשלוח.",
+      successPayment:
+        "💳 התשלום מתבצע רק בעת קבלת ההזמנה.",
+      successWarning:
+        "⚠️ Parasolka אינה מקבלת תשלום מראש. אם מישהו מבקש ממך לשלם מראש בשם Parasolka — מדובר בהונאה.",
+      stockError: (name, stock) =>
+        `${name}: זמינות של ${stock} יחידות בלבד.`,
+      unavailable: name =>
+        `המוצר אינו זמין כרגע: ${name}`,
+      notFound: id => `המוצר לא נמצא: ${id}`,
+      invalidQuantity: name =>
+        `כמות לא תקינה: ${name}`,
+      genericError:
+        "❌ לא ניתן היה לבצע את ההזמנה.\n\nנא לנסות שוב.",
+      tooLarge:
+        "ההזמנה גדולה מדי לעיבוד אוטומטי בצ'אט.\n\nנא לבצע את ההזמנה דרך Mini App של Parasolka Food.",
+      parseError:
+        "מצטער, לא הצלחתי לעבד את הבקשה כרגע. נסה שוב."
+    }
+  };
+
+  return texts[language]?.[key] ?? texts.ENGLISH[key];
+}
+
 async function sendTelegramMessage(chatId, text, extra = {}) {
-  await fetch(
+  const response = await fetch(
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
     {
       method: "POST",
@@ -63,10 +244,17 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
       })
     }
   );
+
+  if (!response.ok) {
+    console.error(
+      "Telegram sendMessage error:",
+      await response.text()
+    );
+  }
 }
 
 async function answerCallbackQuery(callbackQueryId, text = "") {
-  await fetch(
+  const response = await fetch(
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
     {
       method: "POST",
@@ -79,6 +267,13 @@ async function answerCallbackQuery(callbackQueryId, text = "") {
       })
     }
   );
+
+  if (!response.ok) {
+    console.error(
+      "Telegram answerCallbackQuery error:",
+      await response.text()
+    );
+  }
 }
 
 async function editTelegramMessage(
@@ -87,7 +282,7 @@ async function editTelegramMessage(
   text,
   extra = {}
 ) {
-  await fetch(
+  const response = await fetch(
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`,
     {
       method: "POST",
@@ -102,6 +297,13 @@ async function editTelegramMessage(
       })
     }
   );
+
+  if (!response.ok) {
+    console.error(
+      "Telegram editMessageText error:",
+      await response.text()
+    );
+  }
 }
 
 async function getCatalog() {
@@ -111,19 +313,15 @@ async function getCatalog() {
     throw new Error("Не удалось получить каталог");
   }
 
-  return await response.json();
+  const data = await response.json();
+
+  if (!Array.isArray(data)) {
+    throw new Error("Каталог имеет неверный формат");
+  }
+
+  return data;
 }
 
-
-/*
- * Разбираем короткую строку заказа:
- *
- * 1=2,154=1
- *
- * означает:
- * товар ID 1 — 2 шт.
- * товар ID 154 — 1 шт.
- */
 function parseOrderData(data) {
   const result = [];
 
@@ -152,39 +350,59 @@ function parseOrderData(data) {
   return result;
 }
 
-
-/*
- * Формируем короткую строку для callback_data.
- *
- * Например:
- * 1=2,154=1
- */
 function createOrderData(items) {
   return items
     .map(item => `${item.id}=${item.quantity}`)
     .join(",");
 }
 
+function createCallbackData(action, language, orderData = "") {
+  const code = LANGUAGE_CODE[language] || "E";
 
-/*
- * Telegram callback_data ограничен 64 байтами.
- */
-function canFitCallbackData(orderData) {
-  return Buffer.byteLength(
-    `confirm:${orderData}`,
-    "utf8"
-  ) <= 64;
+  if (action === "cancel") {
+    return `cancel:${code}`;
+  }
+
+  return `confirm:${code}:${orderData}`;
 }
 
+function parseCallbackData(data) {
+  if (data === "cancel") {
+    return {
+      action: "cancel",
+      language: "UKRAINIAN"
+    };
+  }
 
-/*
- * Расчёт заказа на стороне бота нужен только
- * для показа клиенту предварительного итога.
- *
- * Окончательный расчёт всё равно делает
- * Google Apps Script при сохранении заказа.
- */
-function calculateOrder(items, catalog) {
+  if (data.startsWith("cancel:")) {
+    const code = data.split(":")[1] || "E";
+
+    return {
+      action: "cancel",
+      language: CODE_LANGUAGE[code] || "ENGLISH"
+    };
+  }
+
+  if (data.startsWith("confirm:")) {
+    const parts = data.split(":");
+    const code = parts[1] || "E";
+    const orderData = parts.slice(2).join(":");
+
+    return {
+      action: "confirm",
+      language: CODE_LANGUAGE[code] || "ENGLISH",
+      orderData
+    };
+  }
+
+  return null;
+}
+
+function canFitCallbackData(callbackData) {
+  return Buffer.byteLength(callbackData, "utf8") <= 64;
+}
+
+function calculateOrder(items, catalog, language = "ENGLISH") {
   let inStockSubtotal = 0;
   let preorderSubtotal = 0;
 
@@ -196,38 +414,25 @@ function calculateOrder(items, catalog) {
     );
 
     if (!product) {
-      throw new Error(
-        `Товар не найден: ${item.id}`
-      );
+      throw new Error(t(language, "notFound")(item.id));
     }
 
     if (!product.available) {
-      throw new Error(
-        `Товар сейчас недоступен: ${product.name}`
-      );
+      throw new Error(t(language, "unavailable")(product.name));
     }
 
     const quantity = Number(item.quantity);
 
-    if (!quantity || quantity < 1) {
-      throw new Error(
-        `Неверное количество: ${product.name}`
-      );
+    if (!Number.isFinite(quantity) || quantity < 1) {
+      throw new Error(t(language, "invalidQuantity")(product.name));
     }
 
-    /*
-     * Для товара из наличия проверяем
-     * текущий остаток ещё до подтверждения.
-     */
-    if (
-      product.category === IN_STOCK_CATEGORY
-    ) {
-      const stock =
-        Number(product.stockQuantity || 0);
+    if (product.category === IN_STOCK_CATEGORY) {
+      const stock = Number(product.stockQuantity || 0);
 
       if (quantity > stock) {
         throw new Error(
-          `${product.name}: доступно только ${stock} шт.`
+          t(language, "stockError")(product.name, stock)
         );
       }
 
@@ -247,16 +452,14 @@ function calculateOrder(items, catalog) {
     });
   }
 
-  const onlineDiscount =
-    preorderSubtotal * 0.10;
+  const onlineDiscount = preorderSubtotal * 0.10;
 
   const total =
     inStockSubtotal +
     preorderSubtotal -
     onlineDiscount;
 
-  const parasolkaAmount =
-    total * 0.20;
+  const parasolkaAmount = total * 0.20;
 
   return {
     detailedItems,
@@ -268,30 +471,28 @@ function calculateOrder(items, catalog) {
   };
 }
 
-
 function formatMoney(value) {
-  return Number(value || 0)
-    .toLocaleString("uk-UA") + " Ft";
+  return (
+    Number(value || 0).toLocaleString("uk-UA") +
+    " Ft"
+  );
 }
 
-
-function formatOrderPreview(calculation) {
-  let text = "Ваше замовлення:\n\n";
+function formatOrderPreview(calculation, language) {
+  let text = `${t(language, "orderTitle")}\n\n`;
 
   const stockItems =
     calculation.detailedItems.filter(
-      item =>
-        item.category === IN_STOCK_CATEGORY
+      item => item.category === IN_STOCK_CATEGORY
     );
 
   const preorderItems =
     calculation.detailedItems.filter(
-      item =>
-        item.category !== IN_STOCK_CATEGORY
+      item => item.category !== IN_STOCK_CATEGORY
     );
 
   if (stockItems.length) {
-    text += "Товари в наявності:\n";
+    text += `${t(language, "stockTitle")}\n`;
 
     stockItems.forEach(item => {
       text +=
@@ -300,11 +501,12 @@ function formatOrderPreview(calculation) {
     });
 
     text +=
-      `Разом: ${formatMoney(calculation.inStockSubtotal)}\n\n`;
+      `${t(language, "together")} ` +
+      `${formatMoney(calculation.inStockSubtotal)}\n\n`;
   }
 
   if (preorderItems.length) {
-    text += "Попереднє замовлення:\n";
+    text += `${t(language, "preorderTitle")}\n`;
 
     preorderItems.forEach(item => {
       text +=
@@ -313,42 +515,29 @@ function formatOrderPreview(calculation) {
     });
 
     text +=
-      `Разом: ${formatMoney(calculation.preorderSubtotal)}\n`;
+      `${t(language, "together")} ` +
+      `${formatMoney(calculation.preorderSubtotal)}\n`;
 
     text +=
-      `Знижка 10%: −${formatMoney(calculation.onlineDiscount)}\n\n`;
+      `${t(language, "discount")} −` +
+      `${formatMoney(calculation.onlineDiscount)}\n\n`;
   }
 
   text +=
-    `До сплати: ${formatMoney(calculation.total)}\n`;
+    `${t(language, "toPay")} ` +
+    `${formatMoney(calculation.total)}\n`;
 
   text +=
-    `20% на користь Парасольки: ${formatMoney(calculation.parasolkaAmount)}\n\n`;
+    `${t(language, "donation")} ` +
+    `${formatMoney(calculation.parasolkaAmount)}\n\n`;
 
-  text +=
-    "Підтверджуєте замовлення?\n\n";
-
-  text +=
-    "Після підтвердження наш співробітник зв'яжеться " +
-    "з вами, щоб остаточно підтвердити замовлення та деталі доставки.\n\n";
-
-  text +=
-    "⚠️ Оплата здійснюється тільки під час отримання.\n" +
-    "Parasolka не приймає передоплату. " +
-    "Якщо хтось просить вас оплатити замовлення наперед " +
-    "від імені Parasolka — це шахрайство.";
+  text += `${t(language, "confirmQuestion")}\n\n`;
+  text += `${t(language, "contact")}\n\n`;
+  text += t(language, "payment");
 
   return text;
 }
 
-
-/*
- * Отправляем заказ в существующий Google Apps Script.
- *
- * ВАЖНО:
- * Мы используем тот же формат, который уже
- * используется Mini App.
- */
 async function createGoogleOrder(order) {
   const response = await fetch(
     GOOGLE_SCRIPT_URL,
@@ -362,13 +551,10 @@ async function createGoogleOrder(order) {
   );
 
   if (!response.ok) {
-    throw new Error(
-      "Не удалось отправить заказ"
-    );
+    throw new Error("Не удалось отправить заказ");
   }
 
-  const result =
-    await response.json();
+  const result = await response.json();
 
   if (!result.success) {
     throw new Error(
@@ -380,91 +566,65 @@ async function createGoogleOrder(order) {
   return result;
 }
 
+async function handleConfirmation(callbackQuery) {
+  const callbackId = callbackQuery.id;
+  const chatId = callbackQuery.message.chat.id;
+  const messageId = callbackQuery.message.message_id;
+  const callbackData = callbackQuery.data || "";
 
-async function handleConfirmation(
-  callbackQuery
-) {
-  const callbackId =
-    callbackQuery.id;
+  const parsed = parseCallbackData(callbackData);
 
-  const chatId =
-    callbackQuery.message.chat.id;
-
-  const messageId =
-    callbackQuery.message.message_id;
-
-  const callbackData =
-    callbackQuery.data || "";
+  const language =
+    parsed?.language || "ENGLISH";
 
   await answerCallbackQuery(
     callbackId,
-    "Перевіряю замовлення..."
+    t(language, "confirmChecking")
   );
 
   try {
-    if (
-      callbackData ===
-      "cancel"
-    ) {
+    if (!parsed) {
+      return;
+    }
+
+    if (parsed.action === "cancel") {
       await editTelegramMessage(
         chatId,
         messageId,
-        "Замовлення скасовано."
+        t(language, "cancelled")
       );
 
       return;
     }
-
-    if (
-      !callbackData.startsWith(
-        "confirm:"
-      )
-    ) {
-      return;
-    }
-
-    const orderData =
-      callbackData.substring(
-        "confirm:".length
-      );
 
     const requestedItems =
-      parseOrderData(orderData);
+      parseOrderData(parsed.orderData);
 
     if (!requestedItems.length) {
       throw new Error(
-        "Не вдалося визначити товари."
+        "Не удалось определить товары."
       );
     }
 
-    /*
-     * ОБЯЗАТЕЛЬНО заново получаем каталог.
-     *
-     * Это защищает от ситуации, когда
-     * остаток изменился после показа
-     * пользователю предварительного итога.
-     */
-    const catalog =
-      await getCatalog();
+    const catalog = await getCatalog();
 
     const calculation =
       calculateOrder(
         requestedItems,
-        catalog
+        catalog,
+        language
       );
 
     const telegramUser =
       callbackQuery.from || {};
 
     const orderItems =
-      calculation.detailedItems.map(
-        item => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price
-        })
-      );
+      calculation.detailedItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price
+      }));
 
     const order = {
       name:
@@ -477,14 +637,11 @@ async function handleConfirmation(
       telegramUser: {
         id: telegramUser.id,
         username:
-          telegramUser.username ||
-          "",
+          telegramUser.username || "",
         first_name:
-          telegramUser.first_name ||
-          "",
+          telegramUser.first_name || "",
         last_name:
-          telegramUser.last_name ||
-          ""
+          telegramUser.last_name || ""
       },
 
       comment:
@@ -493,49 +650,39 @@ async function handleConfirmation(
       items: orderItems
     };
 
-    /*
-     * Google Apps Script ещё раз проверит
-     * остаток и только потом спишет его.
-     */
     const result =
       await createGoogleOrder(order);
 
     let confirmationText =
-      "✅ Дякуємо! Ваше замовлення №" +
-      result.orderNumber +
-      " прийнято.\n\n";
+      `${t(language, "success")(result.orderNumber)}\n\n`;
 
     confirmationText +=
-      "Наш співробітник зв'яжеться з вами, " +
-      "щоб остаточно підтвердити замовлення " +
-      "та деталі доставки.\n\n";
+      `${t(language, "successContact")}\n\n`;
 
     confirmationText +=
-      "💳 Оплата здійснюється тільки під час отримання.\n\n";
+      `${t(language, "successPayment")}\n\n`;
 
     confirmationText +=
-      "⚠️ Parasolka не приймає передоплату. " +
-      "Якщо хтось просить вас оплатити замовлення " +
-      "наперед від імені Parasolka — це шахрайство.";
+      t(language, "successWarning");
 
     await editTelegramMessage(
-  chatId,
-  messageId,
-  confirmationText,
-  {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "🛍 Мої замовлення",
-            url: "https://t.me/Parasolkafoodbot?startapp"
-          }
-        ]
-      ]
-    }
-  }
-);
-
+      chatId,
+      messageId,
+      confirmationText,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🛍 Мої замовлення",
+                url:
+                  "https://t.me/Parasolkafoodbot?startapp"
+              }
+            ]
+          ]
+        }
+      }
+    );
   } catch (error) {
     console.error(
       "CONFIRMATION ERROR:",
@@ -545,38 +692,23 @@ async function handleConfirmation(
     await editTelegramMessage(
       chatId,
       messageId,
-      "❌ Не вдалося оформити замовлення.\n\n" +
-      error.message +
-      "\n\nБудь ласка, спробуйте ще раз."
+      `${t(language, "genericError")}\n\n${error.message}`
     );
   }
 }
 
-
 async function handler(req, res) {
-
   if (req.method !== "POST") {
     return res.status(200).json({
       ok: true,
-      message:
-        "Parasolka AI bot is running"
+      message: "Parasolka AI bot is running"
     });
   }
 
   try {
+    const update = req.body;
 
-    const update =
-      req.body;
-
-    /*
-     * =====================================================
-     * CALLBACK QUERY — ПОДТВЕРЖДЕНИЕ / ОТМЕНА
-     * =====================================================
-     */
-
-    if (
-      update.callback_query
-    ) {
+    if (update.callback_query) {
       await handleConfirmation(
         update.callback_query
       );
@@ -585,13 +717,6 @@ async function handler(req, res) {
         ok: true
       });
     }
-
-
-    /*
-     * =====================================================
-     * ОБЫЧНОЕ TELEGRAM MESSAGE
-     * =====================================================
-     */
 
     if (
       !update.message ||
@@ -616,24 +741,24 @@ async function handler(req, res) {
       });
     }
 
-
     /*
-     * Получаем актуальный каталог.
+     * ВАЖНО:
+     * Сначала добавляем именно текущее сообщение пользователя
+     * в историю. В старом коде этого не было — AI видел историю,
+     * но НЕ видел текущий вопрос пользователя.
      */
+    addToConversationHistory(
+      chatId,
+      "user",
+      userText
+    );
+
     const catalog =
       await getCatalog();
 
-
-    /*
-     * Передаём AI максимально полезную
-     * информацию о товарах.
-     */
     const catalogForAI =
       catalog
-        .filter(
-          product =>
-            product.available
-        )
+        .filter(product => product.available)
         .map(product => ({
           id: product.id,
           name: product.name,
@@ -645,160 +770,76 @@ async function handler(req, res) {
             product.description
         }));
 
-const clientLanguage =
-  /[\u0590-\u05FF]/.test(userText)
-    ? "HEBREW"
-    : /[А-Яа-яЁёЇїІіЄєҐґ]/.test(userText)
-      ? (
-          /[ЇїІіЄєҐґ]/.test(userText)
-            ? "UKRAINIAN"
-            : "RUSSIAN"
-        )
-      : "ENGLISH";
+    const clientLanguage =
+      detectLanguage(userText);
+
     const systemPrompt = `
-Ти — AI-консультант магазину Parasolka Food.
+Ты — AI-консультант магазина Parasolka Food.
 
-МОВА СПІЛКУВАННЯ:
-- Завжди відповідай клієнту тією самою мовою, якою він звертається до тебе.
-- Якщо клієнт пише українською — відповідай українською.
-- Якщо клієнт пише російською — відповідай російською.
-- Якщо клієнт пише англійською — відповідай англійською.
-- Якщо клієнт пише івритом — відповідай івритом.
-- Якщо клієнт змінює мову під час діалогу — переходь на нову мову.
-- Не пояснюй клієнту, якою мовою ти відповідаєш.
-- Назви товарів у каталозі можеш залишати в оригінальному вигляді, якщо це допомагає точно визначити товар.
-- ПОТОЧНА МОВА КЛІЄНТА: ${clientLanguage}
-- ВІДПОВІДАЙ ВИКЛЮЧНО ЦІЄЮ МОВОЮ.
-- Не використовуй українську лише тому, що попередні повідомлення були українською.
-Твоє завдання:
-- допомагати вибирати товари;
-- повідомляти актуальні ціни;
-- повідомляти наявність;
-- рекомендувати товари;
-- приймати замовлення;
-- ніколи не вигадувати товари, ціни, кількість або наявність.
-- Якщо клієнт питає про інший вид або категорію товарів, ніж у попередньому повідомленні, завжди орієнтуйся на НОВИЙ запит клієнта.
-- Не продовжуй попередню тему автоматично.
-- Наприклад, якщо раніше обговорювали мед, а клієнт питає про рибу, потрібно шукати товари з риби, а НЕ продовжувати пропонувати мед.
-- Для запитів на кшталт "що є з риби?", "what fish do you have?", "какая есть рыба?" або "які є солодощі?" переглянь актуальний каталог і покажи відповідні товари.
-- Відповідність шукай за назвою товару, категорією та описом.
-- Якщо клієнт просто запитує про асортимент, НЕ створюй замовлення.
-- Якщо відповідних товарів у каталозі немає, чесно скажи, що таких товарів зараз немає.
+ТЕКУЩИЙ ЯЗЫК КЛИЕНТА:
+${clientLanguage}
 
-ВАЖЛИВІ ПРАВИЛА МАГАЗИНУ:
+Отвечай клиенту только на этом языке.
+Если клиент сменил язык — используй новый язык.
+Не объясняй выбор языка.
 
-1. Категорія "Товари в наявності":
-   - товар можна отримати зараз;
-   - знижка 10% НЕ застосовується;
-   - кількість обмежена залишком stockQuantity.
+ГЛАВНОЕ ПРАВИЛО:
+ТЕКУЩЕЕ сообщение клиента важнее предыдущей темы разговора.
+Сначала отвечай на текущий вопрос.
+Не продолжай предыдущую тему, если клиент явно спрашивает о другом товаре или категории.
 
-2. Усі інші категорії:
-   - це попереднє замовлення;
-   - на них діє онлайн-знижка 10%.
+Например:
+если раньше обсуждали мёд, а сейчас клиент пишет "что есть из рыбы?",
+нужно искать рыбу в каталоге и НЕ отвечать про мёд.
 
-3. Один і той самий товар може бути представлений двома товарами:
-   - один у категорії "Товари в наявності";
-   - другий у категорії попереднього замовлення.
-   Це НЕ дублікати.
-   Клієнту можна запропонувати обидва варіанти.
+Для вопросов:
+- "что есть из рыбы?"
+- "какая есть рыба?"
+- "what fish do you have?"
+- "what do you have in fish?"
+- "какая рыба есть?"
+ищи соответствующие товары по названию, категории и описанию.
 
-4. Не кажи, що товар доступний зараз, якщо він не має категорії
-   "Товари в наявності".
+Если клиент просто спрашивает об ассортименте, цене или наличии — НЕ создавай заказ.
+Если клиент хочет заказать товар, для заказа нужны товар и количество.
+Если количество не указано — спроси количество.
 
-5. Не вигадуй залишок.
-   Якщо stockQuantity дорівнює 0, товар із категорії
-   "Товари в наявності" не можна пропонувати як товар у наявності.
+Если клиент пишет "да", "беру", "хочу", "заказывай", "yes" и т.п.,
+можно использовать предыдущий контекст ТОЛЬКО если из него однозначно понятно,
+какой товар и какое количество имеются в виду.
 
-6. Оплата:
-   Parasolka приймає оплату ТІЛЬКИ ПІД ЧАС ОТРИМАННЯ.
-   Передоплати немає.
-   Якщо хтось просить клієнта оплатити замовлення наперед
-   від імені Parasolka — це шахрайство.
+Если клиент спрашивает о другом товаре, предыдущий товар больше не является главным контекстом.
 
-7. Після оформлення замовлення людина з команди Parasolka
-   зв'яжеться з клієнтом для остаточного підтвердження.
+Не показывай клиенту ID товаров, внутренние номера, stockQuantity,
+JSON или другие технические данные.
+ID используй только во внутреннем JSON заказа.
 
-8. Якщо клієнт просто запитує про товар або ціну —
-   НЕ створюй замовлення.
+ТОВАРЫ:
+- Категория "Товари в наявності": товар есть сейчас; скидка 10% не применяется;
+  количество ограничено stockQuantity.
+- Все остальные категории: это предварительный заказ; действует онлайн-скидка 10%.
+- Один и тот же товар может иметь одновременно строку "Товари в наявності"
+  и строку предварительного заказа. Это два разных варианта покупки.
+- Не говори, что товар можно получить сейчас, если он не относится к категории
+  "Товари в наявності".
+- Не придумывай товары, цены или наличие.
+- Все цены в каталоге указаны в форинтах. Используй Ft, не грн и не UAH.
+- Оплата только при получении. Передоплаты нет.
 
-9. Якщо клієнт хоче замовити товар —
-   допоможи йому оформити замовлення природною мовою.
+ФОРМАТ ОТВЕТА:
+Возвращай только JSON.
 
-10. КЛІЄНТУ НІКОЛИ НЕ ПОТРІБНО ЗНАТИ АБО ВВОДИТИ ID ТОВАРУ.
-    ID товару використовуй тільки внутрішньо.
-
-11. НІКОЛИ не показуй клієнту:
-    - ID товару;
-    - внутрішній номер рядка;
-    - технічні поля каталогу;
-    - JSON;
-    - stockQuantity;
-    - інші внутрішні технічні дані.
-
-12. Якщо клієнт назвав товар, але не вказав кількість —
-    запитай, скільки штук він хоче.
-
-13. Якщо клієнт назвав загальний тип товару,
-    а в каталозі є кілька варіантів,
-    покажи відповідні варіанти з назвами та цінами
-    і попроси вибрати потрібний варіант.
-    НЕ показуй ID цих товарів.
-
-14. Не проси клієнта написати ID товару.
-
-15. Якщо клієнт пише щось на кшталт:
-    "хочу замовити мед",
-    "да, хочу заказать",
-    "беру",
-    "хочу 2 банки",
-    —
-    використовуй попередній контекст діалогу,
-    щоб зрозуміти, який товар він має на увазі.
-
-16. Якщо з контексту однозначно зрозуміло,
-    який товар клієнт хоче замовити,
-    самостійно використовуй відповідний ID з каталогу.
-
-17. Якщо товар або його варіант незрозумілий —
-    постав уточнююче питання замість того,
-    щоб просити клієнта вводити ID.
-
-18. items заповнюй ТІЛЬКИ тоді,
-    коли товар і кількість достатньо визначені.
-
-19. Якщо кількість не вказана —
-    не вигадуй її і не створюй замовлення.
-
-20. Якщо клієнт хоче замовити кілька товарів,
-    можеш додати всі однозначно визначені товари в items.
-
-21. Якщо клієнт підтверджує попередньо запропонований товар
-    словами "так", "беру", "замовляй", "да", "хочу" тощо,
-    використовуй контекст попереднього повідомлення,
-    якщо з нього однозначно зрозуміло, який товар і кількість маються на увазі.
-
-22. Усі ціни в каталозі вказані у форинтах.
-    Завжди використовуй "Ft".
-    Ніколи не використовуй "грн", "UAH" або "₴".
-
-23. Не вигадуй переклад назв товарів, якщо через переклад
-    може бути незрозуміло, який саме товар мається на увазі.
-
-ПОВЕРТАЙ РЕЗУЛЬТАТ ВИКЛЮЧНО У JSON.
-
-Формат для звичайної відповіді:
-
+Обычный ответ:
 {
   "type": "answer",
-  "message": "текст відповіді клієнту",
+  "message": "текст для клиента",
   "items": []
 }
 
-Формат для замовлення:
-
+Заказ:
 {
   "type": "order",
-  "message": "короткий текст",
+  "message": "текст для клиента",
   "items": [
     {
       "id": "ID товара",
@@ -807,53 +848,40 @@ const clientLanguage =
   ]
 }
 
-ВАЖЛИВО:
-- items заповнюй ТІЛЬКИ якщо клієнт реально хоче зробити замовлення.
-- Якщо клієнт не вказав кількість, не вигадуй її.
-- Якщо неясно, який саме товар клієнт має на увазі, задай уточнююче питання.
-- Використовуй ID з каталогу тільки у внутрішньому JSON.
-- НІКОЛИ не показуй ID клієнту.
-- Не використовуй назву замість ID.
-- Message призначений безпосередньо для клієнта.
-- Message не повинен містити технічних пояснень про роботу AI.
+items заполняй только когда клиент действительно хочет сделать заказ
+и товар с количеством достаточно определены.
 
-АКТУАЛЬНИЙ КАТАЛОГ:
+Не показывай ID в message.
 
-${JSON.stringify(
-  catalogForAI,
-  null,
-  2
-)}
+АКТУАЛЬНЫЙ КАТАЛОГ:
+${JSON.stringify(catalogForAI, null, 2)}
 `;
-const history =
-  getConversationHistory(chatId);
 
-const completion =
-  await openai.chat.completions.create({
-    model: "gpt-5-mini",
+    const history =
+      getConversationHistory(chatId);
 
-    response_format: {
-      type: "json_object"
-    },
+    const completion =
+      await openai.chat.completions.create({
+        model: "gpt-5-mini",
 
-    messages: [
-      {
-        role: "system",
-        content:
-          systemPrompt
-      },
-      ...history
-    ]
-  });
+        response_format: {
+          type: "json_object"
+        },
 
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          ...history
+        ]
+      });
 
     const rawAnswer =
       completion
         .choices?.[0]
         ?.message
-        ?.content ||
-      "{}";
-
+        ?.content || "{}";
 
     let aiResult;
 
@@ -861,48 +889,31 @@ const completion =
       aiResult =
         JSON.parse(rawAnswer);
     } catch (parseError) {
-
-      /*
-       * На случай, если модель всё-таки
-       * вернула невалидный JSON.
-       */
       await sendTelegramMessage(
         chatId,
-        "Вибачте, зараз не вдалося обробити запит. Спробуйте ще раз."
+        t(clientLanguage, "parseError")
       );
 
       return res.status(200).json({
         ok: true
       });
     }
-/*
- * Сохраняем ответ AI в историю диалога.
- */
-addToConversationHistory(
-  chatId,
-  "assistant",
-  rawAnswer
-);
 
-    /*
-     * =====================================================
-     * ОБЫЧНЫЙ ОТВЕТ
-     * =====================================================
-     */
+    addToConversationHistory(
+      chatId,
+      "assistant",
+      rawAnswer
+    );
 
     if (
-      aiResult.type !==
-        "order" ||
-      !Array.isArray(
-        aiResult.items
-      ) ||
+      aiResult.type !== "order" ||
+      !Array.isArray(aiResult.items) ||
       !aiResult.items.length
     ) {
-
       await sendTelegramMessage(
         chatId,
         aiResult.message ||
-        "Вибачте, зараз не можу відповісти."
+          t(clientLanguage, "parseError")
       );
 
       return res.status(200).json({
@@ -910,59 +921,45 @@ addToConversationHistory(
       });
     }
 
-
-    /*
-     * =====================================================
-     * ЗАКАЗ
-     * =====================================================
-     */
-
     const requestedItems =
-      aiResult.items.map(
-        item => ({
-          id:
-            String(
-              item.id
-            ).trim(),
+      aiResult.items.map(item => ({
+        id:
+          String(item.id).trim(),
 
-          quantity:
-            Number(
-              item.quantity
-            )
-        })
-      );
+        quantity:
+          Number(item.quantity)
+      }));
 
-
-    /*
-     * Проверяем заказ по актуальному каталогу.
-     */
     const calculation =
       calculateOrder(
         requestedItems,
-        catalog
+        catalog,
+        clientLanguage
       );
-
 
     const orderData =
-      createOrderData(
-        requestedItems
+      createOrderData(requestedItems);
+
+    const confirmCallback =
+      createCallbackData(
+        "confirm",
+        clientLanguage,
+        orderData
       );
 
+    const cancelCallback =
+      createCallbackData(
+        "cancel",
+        clientLanguage
+      );
 
-    /*
-     * Проверяем ограничение Telegram
-     * на callback_data.
-     */
     if (
-      !canFitCallbackData(
-        orderData
-      )
+      !canFitCallbackData(confirmCallback) ||
+      !canFitCallbackData(cancelCallback)
     ) {
-
       await sendTelegramMessage(
         chatId,
-        "Замовлення занадто велике для автоматичного оформлення через чат.\n\n" +
-        "Будь ласка, зробіть замовлення через Mini App Parasolka Food."
+        t(clientLanguage, "tooLarge")
       );
 
       return res.status(200).json({
@@ -970,12 +967,11 @@ addToConversationHistory(
       });
     }
 
-
     const preview =
       formatOrderPreview(
-        calculation
+        calculation,
+        clientLanguage
       );
-
 
     await sendTelegramMessage(
       chatId,
@@ -986,17 +982,23 @@ addToConversationHistory(
             [
               {
                 text:
-                  "✅ Підтвердити замовлення",
+                  t(
+                    clientLanguage,
+                    "confirmButton"
+                  ),
                 callback_data:
-                  `confirm:${orderData}`
+                  confirmCallback
               }
             ],
             [
               {
                 text:
-                  "❌ Скасувати",
+                  t(
+                    clientLanguage,
+                    "cancelButton"
+                  ),
                 callback_data:
-                  "cancel"
+                  cancelCallback
               }
             ]
           ]
@@ -1004,22 +1006,17 @@ addToConversationHistory(
       }
     );
 
-
     return res.status(200).json({
       ok: true
     });
-
   } catch (error) {
-
     console.error(error);
 
     return res.status(500).json({
       ok: false,
-      error:
-        error.message
+      error: error.message
     });
   }
 }
-
 
 module.exports = handler;
