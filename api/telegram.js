@@ -794,14 +794,19 @@ async function handler(req, res) {
 - Якщо клієнт не вказав кількість, не вигадуй її.
 - Якщо неясно, який саме товар клієнт має на увазі, задай уточнююче питання.
 - Використовуй ID з каталогу тільки у внутрішньому JSON.
-- НІКОЛИ не показуй 
-addToConversationHistory(
-addToConversationHistory(
-  chatId,
-  "user",
-  userText
-);
+- НІКОЛИ не показуй ID клієнту.
+- Не використовуй назву замість ID.
+- Message призначений безпосередньо для клієнта.
+- Message не повинен містити технічних пояснень про роботу AI.
 
+АКТУАЛЬНИЙ КАТАЛОГ:
+
+${JSON.stringify(
+  catalogForAI,
+  null,
+  2
+)}
+`;
 const history =
   getConversationHistory(chatId);
 
