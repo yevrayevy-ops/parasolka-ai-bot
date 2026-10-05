@@ -796,6 +796,7 @@ async function handler(req, res) {
 - Використовуй ID з каталогу тільки у внутрішньому JSON.
 - НІКОЛИ не показуй 
 addToConversationHistory(
+addToConversationHistory(
   chatId,
   "user",
   userText
