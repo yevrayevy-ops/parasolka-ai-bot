@@ -519,10 +519,22 @@ async function handleConfirmation(
       "наперед від імені Parasolka — це шахрайство.";
 
     await editTelegramMessage(
-      chatId,
-      messageId,
-      confirmationText
-    );
+  chatId,
+  messageId,
+  confirmationText,
+  {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "🛍 Мої замовлення",
+            url: "https://t.me/Parasolkafoodbot?startapp"
+          }
+        ]
+      ]
+    }
+  }
+);
 
   } catch (error) {
     console.error(
