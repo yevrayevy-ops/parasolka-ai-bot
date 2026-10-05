@@ -81,7 +81,12 @@ async function answerCallbackQuery(callbackQueryId, text = "") {
   );
 }
 
-async function editTelegramMessage(chatId, messageId, text) {
+async function editTelegramMessage(
+  chatId,
+  messageId,
+  text,
+  extra = {}
+) {
   await fetch(
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`,
     {
@@ -92,7 +97,8 @@ async function editTelegramMessage(chatId, messageId, text) {
       body: JSON.stringify({
         chat_id: chatId,
         message_id: messageId,
-        text
+        text,
+        ...extra
       })
     }
   );
