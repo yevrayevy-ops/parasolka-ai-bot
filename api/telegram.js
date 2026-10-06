@@ -46,10 +46,7 @@ function detectLanguage(text) {
     return "RUSSIAN";
   }
 
-  // For all other languages, AI determines the language
-  // directly from the user's current message.
   return "ENGLISH";
-}
 }
 
 const LANGUAGE_CODE = {
@@ -300,8 +297,7 @@ async function editTelegramMessage(
       })
     }
   );
-
-  if (!response.ok) {
+    if (!response.ok) {
     console.error(
       "Telegram editMessageText error:",
       await response.text()
@@ -449,6 +445,11 @@ function calculateOrder(items, catalog, language = "ENGLISH") {
     detailedItems.push({
       id: product.id,
       name: product.name,
+      displayName:
+        typeof item.displayName === "string" &&
+        item.displayName.trim()
+          ? item.displayName.trim()
+          : product.name,
       category: product.category,
       price: Number(product.price || 0),
       quantity
@@ -499,7 +500,7 @@ function formatOrderPreview(calculation, language) {
 
     stockItems.forEach(item => {
       text +=
-        `• ${item.name} × ${item.quantity} — ` +
+        `• ${item.displayName || item.name} × ${item.quantity} — ` +
         `${formatMoney(item.price * item.quantity)}\n`;
     });
 
@@ -513,7 +514,7 @@ function formatOrderPreview(calculation, language) {
 
     preorderItems.forEach(item => {
       text +=
-        `• ${item.name} × ${item.quantity} — ` +
+        `• ${item.displayName || item.name} × ${item.quantity} — ` +
         `${formatMoney(item.price * item.quantity)}\n`;
     });
 
@@ -596,8 +597,7 @@ async function handleConfirmation(callbackQuery) {
         messageId,
         t(language, "cancelled")
       );
-
-      return;
+            return;
     }
 
     const requestedItems =
@@ -776,7 +776,10 @@ async function handler(req, res) {
     const clientLanguage =
       detectLanguage(userText);
 
-   ТЕКУЩИЙ ЯЗЫК КЛИЕНТА:
+    const systemPrompt = `
+Ты — AI-консультант магазина Parasolka Food.
+
+ТЕКУЩИЙ ЯЗЫК КЛИЕНТА:
 ${clientLanguage}
 
 ПРАВИЛО ЯЗЫКА:
@@ -794,10 +797,6 @@ ${clientLanguage}
 - Если клиент сменил язык — сразу используй новый язык.
 - Не спрашивай, на каком языке отвечать.
 - Не объясняй выбор языка.
-
-ГЛАВНОЕ ПРАВИЛО:
-Если клиент сменил язык — используй новый язык.
-Не объясняй выбор языка.
 
 ГЛАВНОЕ ПРАВИЛО:
 ТЕКУЩЕЕ сообщение клиента важнее предыдущей темы разговора.
@@ -831,13 +830,12 @@ ${clientLanguage}
 
 - Название товара (пояснение на языке клиента), вес/объём — цена Ft
 
-Если клиент пишет на английском — названия товаров и пояснения в скобках должны быть на английском.
+Названия товаров и пояснения в скобках всегда пиши на языке
+текущего сообщения клиента.
 
-Если клиент пишет на русском — названия товаров и пояснения в скобках должны быть на русском.
-
-Если клиент пишет на украинском — названия товаров и пояснения в скобках должны быть на украинском.
-
-Если клиент пишет на иврите — названия товаров и пояснения в скобках должны быть на иврите.
+Это правило действует для любого языка клиента, включая эстонский,
+венгерский, немецкий, французский, испанский, польский,
+японский, китайский, итальянский и другие языки.
 
 После списка коротко напиши, что клиент может указать название товара и количество, и ты создашь заказ.
 
@@ -867,6 +865,8 @@ ID используй только во внутреннем JSON заказа.
 - Не говори, что товар можно получить сейчас, если он не относится к категории
   "Товари в наявності".
 - Не придумывай товары, цены или наличие.
+- Переводи название товара для displayName на язык клиента, но не меняй смысл товара.
+- Не используй перевод названия для поиска другого товара: ID товара всегда остаётся из каталога.
 - Все цены в каталоге указаны в форинтах. Используй Ft, не грн и не UAH.
 - Оплата только при получении. Передоплаты нет.
 
@@ -887,13 +887,19 @@ ID используй только во внутреннем JSON заказа.
   "items": [
     {
       "id": "ID товара",
-      "quantity": 2
+      "quantity": 2,
+      "displayName": "название товара на языке клиента"
     }
   ]
 }
 
 items заполняй только когда клиент действительно хочет сделать заказ
 и товар с количеством достаточно определены.
+displayName обязательно заполняй для каждого товара в заказе.
+displayName — это название товара, переведённое на язык текущего сообщения клиента.
+Не добавляй в displayName ID товара, внутренний номер или технические данные.
+displayName используется только для отображения заказа клиенту.
+Цена, количество, скидка и остальные расчёты всегда берутся из актуального каталога.
 
 Не показывай ID в message.
 
@@ -971,7 +977,12 @@ ${JSON.stringify(catalogForAI, null, 2)}
           String(item.id).trim(),
 
         quantity:
-          Number(item.quantity)
+          Number(item.quantity),
+
+        displayName:
+          typeof item.displayName === "string"
+            ? item.displayName.trim()
+            : ""
       }));
 
     const calculation =
